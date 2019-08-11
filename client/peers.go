@@ -8,6 +8,7 @@ import (
 	"crypto/sha1"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"net"
 	"time"
 )
@@ -67,17 +68,16 @@ func (peer *Peer) Handshake(infoHash []byte) (*net.TCPConn, error) {
 
 	fmt.Println("Peer connection open")
 
-	conn.SetDeadline(time.Now().Add(time.Second * time.Duration(20)))
+	// conn.SetDeadline(time.Now().Add(time.Second * time.Duration(20)))
 
-	message := make([]byte, 68)
+	message := make([]byte, 67)
 
 	copy(message[0:], string(19))
 	copy(message[1:20], "BitTorrent protocol")
+	fmt.Println(string(message[1:20]))
 	binary.BigEndian.PutUint64(message[20:28], uint64(0))
 	copy(message[28:48], infoHash)
 	copy(message[48:], MyPeerID)
-
-	fmt.Println(message[67:])
 
 	nWritten, err := conn.Write(message[:])
 	if err != nil {
@@ -86,14 +86,25 @@ func (peer *Peer) Handshake(infoHash []byte) (*net.TCPConn, error) {
 	}
 
 	fmt.Printf("%v bytes written to address: %v \n", nWritten, conn.RemoteAddr())
-
+	buf := bufio.NewReader(conn)
+	buff := make([]byte, 100)
 	for {
-		response, err := bufio.NewReader(conn).ReadString('0')
+		size, err := buf.ReadByte()
 		if err != nil {
-			fmt.Printf("Unable to read from tcp connection: %s", err.Error())
+			fmt.Printf("Unable to read from tcp connection: %s \n", err.Error())
+			break
 		}
-		if len(response) > 0 {
-			fmt.Println(response)
+		/*if len(buf.Bytes()) > 0 {
+			fmt.Println(buf.Bytes())
+			break
+		} */
+
+		_, err = io.ReadFull(buf, buff[:int(size)])
+		if err != nil {
+			return nil, err
+		}
+
+		if size > 0 {
 			break
 		}
 	}
@@ -184,6 +195,7 @@ func listen(conn *net.TCPConn, signal map[string](chan []byte)) {
 		nRead, err := conn.Read(response)
 		if err != nil {
 			fmt.Printf("Cannot read from connection: %s \n", err.Error())
+			break
 		}
 
 		if nRead > 0 {
