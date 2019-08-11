@@ -51,18 +51,18 @@ func init() {
 }
 
 // Handshake generate connection, send message, get reply, check peer_id
-func (peer *Peer) Handshake(infoHash []byte) *net.TCPConn {
+func (peer *Peer) Handshake(infoHash []byte) (*net.TCPConn, error) {
 	raddr, err := net.ResolveTCPAddr("tcp", peer.Address)
 	fmt.Println(raddr.String())
 
 	if err != nil {
 		fmt.Printf("Unable to resolve peer IP address: %s \n", err.Error())
-		return nil
+		return nil, err
 	}
 	conn, err := net.DialTCP("tcp", nil, raddr)
 	if err != nil {
 		fmt.Printf("Unable to connect with provided peer address (%s): %s \n", raddr.String(), err.Error())
-		return nil
+		return nil, err
 	}
 
 	fmt.Println("Peer connection open")
@@ -82,7 +82,7 @@ func (peer *Peer) Handshake(infoHash []byte) *net.TCPConn {
 	nWritten, err := conn.Write(message[:])
 	if err != nil {
 		fmt.Printf("Unable to write to TCP connection: %s \n", err.Error())
-		return nil
+		return nil, err
 	}
 
 	fmt.Printf("%v bytes written to address: %v \n", nWritten, conn.RemoteAddr())
@@ -97,7 +97,7 @@ func (peer *Peer) Handshake(infoHash []byte) *net.TCPConn {
 			break
 		}
 	}
-	return conn
+	return conn, nil
 }
 
 // HandlePeer will loop until peer closes connection, processing and routing messages sent through said connection

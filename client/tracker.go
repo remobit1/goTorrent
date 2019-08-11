@@ -8,7 +8,6 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
-	"math/rand"
 	"net"
 	"net/http"
 	"net/url"
@@ -76,7 +75,7 @@ message, then parses the response and sends the announce to get the initial list
 of peers.
 */
 func (request *TrackerRequest) announceUDP(announceURL string) []string {
-
+	fmt.Println(announceURL)
 	raddr, err := net.ResolveUDPAddr("udp", announceURL)
 	if err != nil {
 		log.Fatalf("Failed to resolve provided udp address: %s \n", err.Error())
@@ -87,11 +86,7 @@ func (request *TrackerRequest) announceUDP(announceURL string) []string {
 	}
 
 	defer conn.Close()
-	// create a random unique transactionID
-	transactionID := func() uint32 {
-		r := rand.New(rand.NewSource(time.Now().UnixNano()))
-		return r.Uint32()
-	}
+
 	/*  Create a []byte that can hold the 16 bytes that make
 	up the initial connect request:
 	Offset  Size            Name            Value
@@ -103,7 +98,7 @@ func (request *TrackerRequest) announceUDP(announceURL string) []string {
 	req := make([]byte, 16)
 	binary.BigEndian.PutUint64(req[0:], 0x41727101980)
 	binary.BigEndian.PutUint32(req[8:], 0)
-	binary.BigEndian.PutUint32(req[12:], transactionID())
+	binary.BigEndian.PutUint32(req[12:], binary.BigEndian.Uint32(request.TransactionID))
 
 	/* send the request through the udp connection we created
 	   earlier to the tracker
@@ -117,7 +112,7 @@ func (request *TrackerRequest) announceUDP(announceURL string) []string {
 	/*  grab the connectionID from the response to send back to the
 	tracker in the upcoming announce request.
 	*/
-	connectionID := response[8:16]
+	request.ConnectionID = response[8:16]
 
 	url := strings.Split(conn.LocalAddr().String(), ":")
 	request.Port, err = strconv.Atoi(url[len(url)-1])
@@ -145,11 +140,13 @@ func (request *TrackerRequest) announceUDP(announceURL string) []string {
 	96      16-bit integer  port
 	98
 	*/
-	binary.BigEndian.PutUint64(req[0:], binary.BigEndian.Uint64(connectionID))
+	binary.BigEndian.PutUint64(req[0:], binary.BigEndian.Uint64(request.ConnectionID))
 	binary.BigEndian.PutUint32(req[8:], 1)
-	binary.BigEndian.PutUint32(req[12:], transactionID())
+	binary.BigEndian.PutUint32(req[12:], binary.BigEndian.Uint32(request.TransactionID))
 	copy(req[16:36], request.InfoHash)
+	fmt.Println(string(request.InfoHash))
 	copy(req[36:56], request.PeerID)
+	fmt.Println(string(request.PeerID))
 	binary.BigEndian.PutUint64(req[56:], convertIntToUint64(request.Downloaded))
 	binary.BigEndian.PutUint64(req[64:], convertIntToUint64(request.Left))
 	binary.BigEndian.PutUint64(req[72:], convertIntToUint64(request.Uploaded))
@@ -169,7 +166,11 @@ func (request *TrackerRequest) announceUDP(announceURL string) []string {
 	if string(req[12:16]) == string(response[4:8]) && binary.BigEndian.Uint32(response[:4]) == 1 {
 		fmt.Println("Transaction Ids match")
 		fmt.Printf("There are %v seeders right now. \n", int32(binary.BigEndian.Uint32(response[16:20])))
+		fmt.Printf("There are %v leechers right now. \n", int32(binary.BigEndian.Uint32(response[12:16])))
 		peers = parsePeers(response)
+		for _, peer := range peers {
+			fmt.Println(peer)
+		}
 	}
 
 	return peers
@@ -317,4 +318,57 @@ func parsePeers(response []byte) []string {
 	}
 
 	return peers
+}
+
+func parsePeersFromScrapeResponse(response []byte) {
+	/*
+		Offset      Size            Name            Value
+		0           32-bit integer  action          2 // scrape
+		4           32-bit integer  transaction_id
+		8 + 12 * n  32-bit integer  seeders
+		12 + 12 * n 32-bit integer  completed
+		16 + 12 * n 32-bit integer  leechers
+		8 + 12 * N
+	*/
+
+}
+
+func (request *TrackerRequest) scrapeRequest(announceURL string) {
+	/*
+		Offset          Size            Name            Value
+		0               64-bit integer  connection_id
+		8               32-bit integer  action          2 // scrape
+		12              32-bit integer  transaction_id
+		16 + 20 * n     20-byte string  info_hash
+		16 + 20 * N
+	*/
+
+	/*
+		pathlessURL := strings.Split(announceURL, "/")
+		scrapeURL := scrapeUrl[0] + "/scrape"
+		fmt.Println(scrapeUrl)
+
+		req := make([]byte, 36)
+		copy(req[0:], request.ConnectionID)
+		binary.BigEndian.PutUint32(req[8:], 2)
+		copy(req[12:], request.TransactionID)
+		copy(req[16:], request.InfoHash)
+
+		raddr, err := net.ResolveUDPAddr("udp", scrapeUrl)
+		if err != nil {
+			log.Fatalf("Failed to resolve provided udp address: %s \n", err.Error())
+		}
+
+		conn, err := net.DialUDP("udp", nil, raddr)
+		if err != nil {
+			log.Fatalf("Failed to associate underlying socket to read to and from UDP address: %s \n", err.Error())
+		}
+
+		response, err := sendUDPRequest(conn, newReq)
+		if err != nil {
+			fmt.Printf("Udp request failed to send: %s \n", err.Error())
+		}
+
+		return req
+	*/
 }

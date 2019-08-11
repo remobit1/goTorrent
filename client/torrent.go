@@ -3,14 +3,23 @@ package client
 // Will handle torrent file ingestion, marshaling, and eventually handling of the sent pieces assembly in the correct order to form the torrent.
 
 import (
+	"bytes"
 	"crypto/sha1"
+	"encoding/binary"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"net/url"
 	"os"
+	"time"
 
 	"github.com/zeebo/bencode"
+)
+
+const (
+	maxPeers = 5
 )
 
 // AddTorrent returns a MetaInfo struct
@@ -67,23 +76,35 @@ func (info *MetaInfo) HashInfo() []byte {
 		log.Printf("Unable to encode object: %s", err.Error())
 		return nil
 	}
-
-	_, err = hash.Write(stream)
+	streamer := bytes.NewReader(stream)
+	_, err = io.Copy(hash, streamer)
 	if err != nil {
 		log.Printf("Unable to hash given stream: %s", err.Error())
 		return nil
 	}
 
-	return hash.Sum(nil)
+	infoHash := hash.Sum(nil)
+
+	return infoHash
 }
 
 // CreateTrackerRequest creates an initial tracker request
 func (info *MetaInfo) CreateTrackerRequest(hash []byte) *TrackerRequest {
+	// create a random unique transactionID
+	transactionID := func() uint32 {
+		r := rand.New(rand.NewSource(time.Now().UnixNano()))
+		return r.Uint32()
+	}
+
+	ID := make([]byte, 4)
+
+	binary.BigEndian.PutUint32(ID[:], transactionID())
 	request := TrackerRequest{
-		InfoHash: hash,
-		PeerID:   MyPeerID,
-		Port:     port,
-		Compact:  1,
+		InfoHash:      hash,
+		PeerID:        MyPeerID,
+		Port:          port,
+		Compact:       1,
+		TransactionID: ID,
 	}
 
 	return &request
@@ -140,9 +161,17 @@ func (piece *Piece) prepBlocks(pieceLength int) {
 // Start starts the torrent download
 func (torrent *Torrent) Start() {
 	for _, peer := range torrent.Peers {
-		conn := peer.Handshake(torrent.Hash)
+		fmt.Println("connecting to peer...")
+		conn, err := peer.Handshake(torrent.Hash)
+		if err != nil {
+			continue
+		}
 		go peer.HandlePeer(conn, torrent)
 
+		torrent.ConnectedPeers++
+		if maxPeers == torrent.ConnectedPeers {
+			break
+		}
 	}
 
 	for torrent.torrentNotComplete() {

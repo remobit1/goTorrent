@@ -11,6 +11,7 @@ import (
 	"encoding/binary"
 	"math/rand"
 	"net"
+	"net/url"
 	"time"
 )
 
@@ -33,5 +34,7 @@ func generatePeerID() []byte {
 
 	hash.Write(hashed)
 
-	return hash.Sum(nil)
+	peerID := []byte(url.QueryEscape(string(hash.Sum(nil))))
+
+	return peerID
 }
