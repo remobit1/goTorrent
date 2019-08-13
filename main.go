@@ -6,7 +6,7 @@ import (
 
 func main() {
 	name := `files\The Lego Movie 2 The Second Part (2019) [BluRay] [1080p] [YTS.LT].torrent`
-	torrent := client.AddTorrent(name)
+	torrent := client.AddTcd orrent(name)
 
 	tRequest := torrent.Data.CreateTrackerRequest(torrent.Hash)
 

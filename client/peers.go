@@ -78,7 +78,7 @@ func (peer *Peer) Handshake(infoHash []byte) (*net.TCPConn, error) {
 	copy(message[28:48], infoHash)
 	copy(message[48:], MyPeerID)
 
-	nWritten, err := conn.Write(message[:])
+	nWritten, err := conn.Write(message)
 	if err != nil {
 		fmt.Printf("Unable to write to TCP connection: %s \n", err.Error())
 		return nil, err

@@ -1,14 +1,18 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"net"
+	"sync"
 )
 
 func main() {
 
 	converse := make(chan []byte)
-	go listen(converse)
+	var wg sync.WaitGroup
+	var gg sync.WaitGroup
+	go listen(converse, &wg, &gg)
 
 	raddr, err := net.ResolveTCPAddr("tcp", "localhost:4950")
 
@@ -30,21 +34,35 @@ func main() {
 
 	defer conn.Close()
 
-	hi := []byte("Hello!")
+	hi := []byte("6Hello!")
+	i := 0
 
-	_, err = conn.Write(hi)
+	go func(y int, g *sync.WaitGroup, bg *sync.WaitGroup) {
+		for y < 10 {
+			g.Add(1)
+			_, err := conn.Write(hi)
 
-	if err != nil {
-		fmt.Println(err.Error())
-	}
+			if err != nil {
+				fmt.Println(err.Error())
+			}
+			y++
 
-	select {
-	case greeting := <-converse:
-		fmt.Println(greeting)
+			g.Wait()
+			bg.Done()
+
+		}
+	}(i, &wg, &gg)
+Loop:
+	for {
+		select {
+		case greeting := <-converse:
+			fmt.Println(string(greeting) + "\n")
+			continue Loop
+		}
 	}
 }
 
-func listen(ch chan []byte) {
+func listen(ch chan []byte, wg *sync.WaitGroup, gg *sync.WaitGroup) {
 	listener, err := net.Listen("tcp", "localhost:4950")
 
 	defer listener.Close()
@@ -59,17 +77,29 @@ func listen(ch chan []byte) {
 		fmt.Println(err.Error())
 	}
 
-	var b []byte
-
 	for {
-		n, err := conn.Read(b)
+		gg.Add(1)
+		rdr := bufio.NewReader(conn)
+		// b := make([]byte, 10)
+
+		n, err := rdr.ReadByte()
 
 		if err != nil {
 			fmt.Println(err)
 		}
 
-		if n > 0 {
+		b := make([]byte, int(n))
+
+		b, err = rdr.ReadBytes('!')
+
+		if err != nil {
+			fmt.Println(err)
+		}
+
+		if len(b) > 0 {
 			ch <- b
 		}
+		wg.Done()
+		gg.Wait()
 	}
 }
