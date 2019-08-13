@@ -169,7 +169,7 @@ func (torrent *Torrent) Start() {
 		go peer.HandlePeer(conn, torrent)
 
 		torrent.ConnectedPeers++
-		if maxPeers == torrent.ConnectedPeers {
+		if maxPeers == torrent.ConnectedPeers || (peer.Address == torrent.Peers[len(torrent.Peers)-1].Address) {
 			break
 		}
 	}

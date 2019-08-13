@@ -74,7 +74,6 @@ func (peer *Peer) Handshake(infoHash []byte) (*net.TCPConn, error) {
 
 	copy(message[0:], string(19))
 	copy(message[1:20], "BitTorrent protocol")
-	fmt.Println(string(message[1:20]))
 	binary.BigEndian.PutUint64(message[20:28], uint64(0))
 	copy(message[28:48], infoHash)
 	copy(message[48:], MyPeerID)
