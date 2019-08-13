@@ -45,7 +45,7 @@ func main() {
 }
 
 func listen(ch chan []byte) {
-	listener, err := net.Listen("tcp", "localhost:50000")
+	listener, err := net.Listen("tcp", "localhost:4950")
 
 	defer listener.Close()
 
