@@ -4,102 +4,109 @@ import (
 	"bufio"
 	"fmt"
 	"net"
-	"sync"
 )
 
+/*
+	Let's make a server that can handle multiple connections
+	to the same port, read length-prefixed messages and forward
+	them to be processed (printing).
+*/
+
 func main() {
+	processor := make(chan []byte)
+	port := ":5032"
 
-	converse := make(chan []byte)
-	var wg sync.WaitGroup
-	var gg sync.WaitGroup
-	go listen(converse, &wg, &gg)
-
-	raddr, err := net.ResolveTCPAddr("tcp", "localhost:4950")
+	laddr, err := net.ResolveTCPAddr("tcp", port)
 
 	if err != nil {
-		fmt.Println(err.Error())
+		panic(err)
 	}
 
-	laddr, err := net.ResolveTCPAddr("tcp", "localhost:5000")
+	go listen(processor, laddr)
+	go imitateClientSwarm(laddr)
 
-	if err != nil {
-		fmt.Println(err.Error())
-	}
-
-	conn, err := net.DialTCP("tcp", laddr, raddr)
-
-	if err != nil {
-		fmt.Println(err.Error())
-	}
-
-	defer conn.Close()
-
-	hi := []byte("6Hello!")
-	i := 0
-
-	go func(y int, g *sync.WaitGroup, bg *sync.WaitGroup) {
-		for y < 10 {
-			g.Add(1)
-			_, err := conn.Write(hi)
-
-			if err != nil {
-				fmt.Println(err.Error())
-			}
-			y++
-
-			g.Wait()
-			bg.Done()
-
-		}
-	}(i, &wg, &gg)
-Loop:
 	for {
 		select {
-		case greeting := <-converse:
-			fmt.Println(string(greeting) + "\n")
-			continue Loop
+		case message := <-processor:
+			fmt.Println(string(message) + "\n")
 		}
+	}
+
+}
+
+func listen(processor chan []byte, laddr *net.TCPAddr) {
+	listener, err := net.ListenTCP("tcp", laddr)
+
+	if err != nil {
+		panic(err)
+	}
+
+	for {
+		conn, err := listener.Accept()
+
+		if err != nil {
+			fmt.Printf("Unable to establish connection: %s \n", err.Error())
+			continue
+		}
+		go handleConnection(conn, processor)
 	}
 }
 
-func listen(ch chan []byte, wg *sync.WaitGroup, gg *sync.WaitGroup) {
-	listener, err := net.Listen("tcp", "localhost:4950")
-
-	defer listener.Close()
-
-	if err != nil {
-		fmt.Println(err.Error())
-	}
-
-	conn, err := listener.Accept()
-
-	if err != nil {
-		fmt.Println(err.Error())
-	}
+func handleConnection(conn net.Conn, processor chan []byte) {
+	rdr := bufio.NewReader(conn)
 
 	for {
-		gg.Add(1)
-		rdr := bufio.NewReader(conn)
-		// b := make([]byte, 10)
-
-		n, err := rdr.ReadByte()
+		msgSize, err := rdr.ReadByte()
 
 		if err != nil {
-			fmt.Println(err)
+			fmt.Printf("Unable to read msgSize: %s \n", err.Error())
 		}
 
-		b := make([]byte, int(n))
+		msg := make([]byte, int(msgSize))
 
-		b, err = rdr.ReadBytes('!')
+		n, err := rdr.Read(msg[:msgSize])
 
 		if err != nil {
-			fmt.Println(err)
+			fmt.Printf("Unable to read msg: %s \n", err.Error())
+			continue
 		}
 
-		if len(b) > 0 {
-			ch <- b
+		if n > 0 {
+			fmt.Printf("%v bytes read from %s \n", n, conn.RemoteAddr().String())
+
+			processor <- msg
 		}
-		wg.Done()
-		gg.Wait()
+
+	}
+}
+
+func imitateClientSwarm(raddr *net.TCPAddr) {
+	ports := []string{":4326", ":4327", ":4328"}
+
+	for _, port := range ports {
+		laddr, err := net.ResolveTCPAddr("tcp", port)
+		if err != nil {
+			fmt.Printf("Could not resolve client address: %s \n", err.Error())
+		}
+
+		conn, err := net.DialTCP("tcp", laddr, raddr)
+
+		if err != nil {
+			fmt.Printf("Could not connect to provided server over tcp: %s \n", err.Error())
+		}
+		go writeShitToConnection(conn)
+
+	}
+}
+
+func writeShitToConnection(conn *net.TCPConn) {
+	msgs := [][]byte{[]byte("5hello"), []byte("7goodbye"), []byte("5nice!")}
+
+	for _, msg := range msgs {
+		_, err := conn.Write(msg)
+
+		if err != nil {
+			fmt.Println(err.Error())
+		}
 	}
 }
