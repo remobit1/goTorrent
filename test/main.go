@@ -15,6 +15,7 @@ import (
 
 func main() {
 	processor := make(chan []byte)
+	defer close(processor)
 	port := ":5032"
 
 	laddr, err := net.ResolveTCPAddr("tcp", port)
@@ -29,7 +30,7 @@ func main() {
 	for {
 		select {
 		case message := <-processor:
-			fmt.Println(string(message) + "\n")
+			fmt.Println(string(message))
 		}
 	}
 
@@ -108,7 +109,7 @@ func imitateClientSwarm(raddr *net.TCPAddr) {
 
 func writeShitToConnection(conn *net.TCPConn) {
 
-	msgs := [][]byte{[]byte("6hellos"), []byte("8goodbyes"), []byte("6anice!")}
+	msgs := [][]byte{[]byte("5hello"), []byte("7goodbye"), []byte("5nice!")}
 
 	for _, msg := range msgs {
 		_, err := conn.Write(msg)
