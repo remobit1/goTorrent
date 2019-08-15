@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"net"
+	"strconv"
 )
 
 /*
@@ -62,9 +63,15 @@ func handleConnection(conn net.Conn, processor chan []byte) {
 			fmt.Printf("Unable to read msgSize: %s \n", err.Error())
 		}
 
-		msg := make([]byte, int(msgSize))
+		msgSizeInt, err := strconv.Atoi(string(msgSize))
 
-		n, err := rdr.Read(msg[:msgSize])
+		if err != nil {
+			fmt.Printf("Couldn't convert given string to int: %s", err.Error())
+		}
+
+		msg := make([]byte, msgSizeInt)
+
+		n, err := rdr.Read(msg[:msgSizeInt])
 
 		if err != nil {
 			fmt.Printf("Unable to read msg: %s \n", err.Error())
@@ -100,7 +107,8 @@ func imitateClientSwarm(raddr *net.TCPAddr) {
 }
 
 func writeShitToConnection(conn *net.TCPConn) {
-	msgs := [][]byte{[]byte("5hello"), []byte("7goodbye"), []byte("5nice!")}
+
+	msgs := [][]byte{[]byte("6hellos"), []byte("8goodbyes"), []byte("6anice!")}
 
 	for _, msg := range msgs {
 		_, err := conn.Write(msg)
