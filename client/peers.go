@@ -24,33 +24,6 @@ const (
 	keepAlive = byte(0)
 )
 
-func init() {
-	amChoking = func() []byte {
-		message := make([]byte, 5)
-		binary.BigEndian.PutUint32(message[:4], uint32(1))
-		copy(message[4:], string(0))
-		return message
-	}()
-	amInterested = func() []byte {
-		message := make([]byte, 5)
-		binary.BigEndian.PutUint32(message[:4], uint32(1))
-		copy(message[4:], string(1))
-		return message
-	}()
-	peerChoking = func() []byte {
-		message := make([]byte, 5)
-		binary.BigEndian.PutUint32(message[:4], uint32(1))
-		copy(message[4:], string(2))
-		return message
-	}()
-	peerInterested = func() []byte {
-		message := make([]byte, 5)
-		binary.BigEndian.PutUint32(message[:4], uint32(1))
-		copy(message[4:], string(3))
-		return message
-	}()
-}
-
 // Handshake generate connection, send message, get reply, check peer_id
 func (peer *Peer) Handshake(infoHash []byte) (*net.TCPConn, error) {
 	raddr, err := net.ResolveTCPAddr("tcp", peer.Address)
@@ -188,21 +161,26 @@ func sendMessage(msg []byte, conn *net.TCPConn) {
 	}
 }
 
-func listen(conn *net.TCPConn, signal map[string](chan []byte)) {
-	response := make([]byte, 8192)
-	for {
-		nRead, err := conn.Read(response)
-		if err != nil {
-			fmt.Printf("Cannot read from connection: %s \n", err.Error())
-			break
-		}
+func listen(conn *net.TCPConn) {
+	listener, err := net.ListenTCP("tcp", laddr)
 
-		if nRead > 0 {
-			go evaluateMessage(signal, response[:nRead])
-
-			response = make([]byte, 8192)
-		}
+	if err != nil {
+		panic(err)
 	}
+
+	for {
+		conn, err := listener.Accept()
+
+		if err != nil {
+			fmt.Printf("Unable to establish connection: %s \n", err.Error())
+			continue
+		}
+		go handlePeerConnection(conn)
+	}
+}
+
+func handlePeerConnection(conn *net.Conn) {
+
 }
 
 func evaluateMessage(signal map[string](chan []byte), msg []byte) {
