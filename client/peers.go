@@ -24,8 +24,7 @@ const (
 	keepAlive = byte(0)
 )
 
-// Handshake generate connection, send message, get reply, check peer_id
-func (peer *Peer) Handshake(infoHash []byte) (*net.TCPConn, error) {
+func (peer *Peer) initiateConnection(infoHash []byte) (*net.TCPConn, error) {
 	raddr, err := net.ResolveTCPAddr("tcp", peer.Address)
 	fmt.Println(raddr.String())
 
@@ -83,76 +82,6 @@ func (peer *Peer) Handshake(infoHash []byte) (*net.TCPConn, error) {
 	return conn, nil
 }
 
-// HandlePeer will loop until peer closes connection, processing and routing messages sent through said connection
-func (peer *Peer) HandlePeer(conn *net.TCPConn, torrent *Torrent) {
-
-	defer conn.Close()
-	// create a bunch of channels for message signaling
-	block := make(chan []byte)
-	choking := make(chan []byte)
-	interested := make(chan []byte)
-	bitfield := make(chan []byte)
-	request := make(chan []byte)
-	cancel := make(chan []byte)
-	have := make(chan []byte)
-
-	channelMap := make(map[string](chan []byte))
-	channelMap["block"] = block
-	channelMap["choking"] = choking
-	channelMap["interested"] = interested
-	channelMap["bitfield"] = bitfield
-	channelMap["request"] = request
-	channelMap["have"] = request
-	channelMap["cancel"] = cancel
-
-	go listen(conn, channelMap)
-
-	/* Here's where we route the received messages to their needed functions.
-	   For example, if we confirm that we received a block message using the
-	   evaluateMessage(), it will route the message to a processing helper function
-	   to append the block at its index. */
-	for {
-		select {
-		case <-peer.closeConn:
-			fmt.Println("Peer connection closed.")
-			return
-		// The peer.reqChannel channel receives requests from the client on what it wants from a particular peer.
-		case request := <-peer.reqChannel:
-			sendMessage(request, conn)
-			return
-		case blkMsg := <-block:
-			go torrent.processBlock(blkMsg)
-			continue
-		case reqMsg := <-request:
-			go sendMessage(torrent.processRequest(reqMsg), conn)
-			continue
-		case haveMsg := <-have:
-			go peer.processHave(haveMsg)
-			continue
-		case chkMsg := <-choking:
-			if chkMsg[0] == 0 {
-				// peer is now choking us
-				peer.waitForUnchoke(conn, choking)
-				continue
-			}
-		case interestedMsg := <-interested:
-			if interestedMsg[0] == 2 {
-				peer.Interested = 0
-				continue
-			}
-			peer.Interested = 3
-			continue
-		case bfieldMsg := <-bitfield:
-			go peer.processBitfield(bfieldMsg)
-			continue
-		case cancelMessage := <-cancel:
-			go torrent.processCancel(cancelMessage)
-			continue
-		}
-	}
-
-}
-
 // sendMessage takes a func that returns a built message and a connection and sends that message over the connection
 func sendMessage(msg []byte, conn *net.TCPConn) {
 	_, err := conn.Write(msg)
@@ -161,11 +90,11 @@ func sendMessage(msg []byte, conn *net.TCPConn) {
 	}
 }
 
-func listen(conn *net.TCPConn) {
+func (torrent *Torrent) listen(laddr *net.TCPAddr) {
 	listener, err := net.ListenTCP("tcp", laddr)
 
 	if err != nil {
-		panic(err)
+		fmt.Printf("Unable to listen on give local address: %s \n", err.Error())
 	}
 
 	for {
@@ -175,15 +104,43 @@ func listen(conn *net.TCPConn) {
 			fmt.Printf("Unable to establish connection: %s \n", err.Error())
 			continue
 		}
-		go handlePeerConnection(conn)
+		go torrent.handlePeerConnection(conn)
 	}
 }
 
-func handlePeerConnection(conn *net.Conn) {
+func (torrent *Torrent) handlePeerConnection(conn net.Conn) {
+	rdr := bufio.NewReader(conn)
 
+	for {
+		msgSize := make([]byte, 4)
+		_, err := rdr.Read(msgSize)
+
+		if err != nil {
+			fmt.Printf("Unable to read msgSize: %s \n", err.Error())
+		}
+
+		msgSizeInt := int(binary.BigEndian.Uint32(msgSize))
+
+		msg := make([]byte, msgSizeInt)
+
+		n, err := rdr.Read(msg[:msgSizeInt])
+
+		if err != nil {
+			fmt.Printf("Unable to read msg: %s \n", err.Error())
+			continue
+		}
+
+		if n > 0 {
+			fmt.Printf("%v bytes read from %s \n", n, conn.RemoteAddr().String())
+
+			go torrent.processMessage(msg)
+
+		}
+
+	}
 }
 
-func evaluateMessage(signal map[string](chan []byte), msg []byte) {
+func (torrent *Torrent) processMessage(msg []byte) {
 	if len(msg) == 4 {
 		// It's a keep alive. By being received it's already served it's purpose
 		return
@@ -213,10 +170,10 @@ func evaluateMessage(signal map[string](chan []byte), msg []byte) {
 		signal["bitfield"] <- msg
 		return
 	} else if id == 6 {
-		signal["request"] <- msg
+		torrent.processRequest(msg)
 		return
 	} else if id == 7 {
-		signal["block"] <- msg
+		torrent.processBlock(msg)
 		return
 	} else if id == 8 {
 		signal["cancel"] <- msg

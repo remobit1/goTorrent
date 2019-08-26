@@ -11,6 +11,7 @@ import (
 	"io/ioutil"
 	"log"
 	"math/rand"
+	"net"
 	"net/url"
 	"os"
 	"time"
@@ -159,16 +160,15 @@ func (piece *Piece) prepBlocks(pieceLength int) {
 }
 
 // Start starts the torrent download
-func (torrent *Torrent) Start() {
+func (torrent *Torrent) Start(laddr *net.TCPAddr) {
+	go torrent.listen(laddr)
 	for _, peer := range torrent.Peers {
 		fmt.Println("connecting to peer...")
-		conn, err := peer.Handshake(torrent.Hash)
+		conn, err := peer.initiateConnection(torrent.Hash)
 		if err != nil {
 			continue
 		}
-		go peer.HandlePeer(conn, torrent)
-
-		torrent.ConnectedPeers++
+		+torrent.ConnectedPeers++
 		if maxPeers == torrent.ConnectedPeers || (peer.Address == torrent.Peers[len(torrent.Peers)-1].Address) {
 			break
 		}
