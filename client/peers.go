@@ -25,7 +25,7 @@ const (
 )
 
 func (peer *Peer) initiateConnection(infoHash []byte) (*net.TCPConn, error) {
-	raddr, err := net.ResolveTCPAddr("tcp", peer.Address)
+	raddr, err := net.ResolveTCPAddr("tcp", peer.address)
 	fmt.Println(raddr.String())
 
 	if err != nil {
@@ -90,7 +90,8 @@ func sendMessage(msg []byte, conn *net.TCPConn) {
 	}
 }
 
-func (torrent *Torrent) listen(laddr *net.TCPAddr) {
+// Listen loops for the duration of the client being on, waiting for peer connections.
+func Listen(laddr *net.TCPAddr) {
 	listener, err := net.ListenTCP("tcp", laddr)
 
 	if err != nil {
@@ -104,11 +105,11 @@ func (torrent *Torrent) listen(laddr *net.TCPAddr) {
 			fmt.Printf("Unable to establish connection: %s \n", err.Error())
 			continue
 		}
-		go torrent.handlePeerConnection(conn)
+		go processHandshake(conn)
 	}
 }
 
-func (torrent *Torrent) handlePeerConnection(conn net.Conn) {
+func (peer *Peer) handlePeerConnection(conn net.Conn) {
 	rdr := bufio.NewReader(conn)
 
 	for {
@@ -133,14 +134,14 @@ func (torrent *Torrent) handlePeerConnection(conn net.Conn) {
 		if n > 0 {
 			fmt.Printf("%v bytes read from %s \n", n, conn.RemoteAddr().String())
 
-			go torrent.processMessage(msg)
+			go peer.processMessage(msg)
 
 		}
 
 	}
 }
 
-func (torrent *Torrent) processMessage(msg []byte) {
+func (peer *Peer) processMessage(msg []byte) {
 	if len(msg) == 4 {
 		// It's a keep alive. By being received it's already served it's purpose
 		return
@@ -152,35 +153,63 @@ func (torrent *Torrent) processMessage(msg []byte) {
 	id := msg[4]
 
 	if id == 0 {
-		signal["choking"] <- []byte{0}
+		peer.Choking = 1
 		return
 	} else if id == 1 {
-		signal["choking"] <- []byte{1}
+		peer.Choking = 0
 		return
 	} else if id == 2 {
-		signal["interested"] <- []byte{2}
+		peer.Interested = 1
 		return
 	} else if id == 3 {
-		signal["interested"] <- []byte{3}
+		peer.Interested = 0
 		return
 	} else if id == 4 {
-		signal["have"] <- msg
+		peer.updateBitfield(msg)
 		return
 	} else if id == 5 {
-		signal["bitfield"] <- msg
+		peer.processBitfield(msg)
 		return
 	} else if id == 6 {
-		torrent.processRequest(msg)
+		peer.processRequest(msg)
 		return
 	} else if id == 7 {
-		torrent.processBlock(msg)
+		peer.torrent.processBlock(msg)
 		return
 	} else if id == 8 {
-		signal["cancel"] <- msg
 		return
 	}
 }
 
+func processHandshake(c net.Conn) {
+
+	rdr := bufio.NewReader(c)
+	handshakeMsg := make([]byte, 68)
+
+	for {
+		n, err := rdr.Read(handshakeMsg)
+		if err != nil {
+			fmt.Printf("Unable to read msg: %s \n", err.Error())
+			continue
+		}
+
+		if n > 0 {
+			break
+		}
+	}
+
+	infoHash := handshakeMsg[28:48]
+
+	for _, torrent := range clientState.torrents {
+		if string(torrent.Hash) == string(infoHash) {
+			peer := Peer{
+				peerID: string(handshakeMsg[48:]),
+				conn:   &c,
+			}
+			torrent.Peers = append(torrent.Peers, peer)
+		}
+	}
+}
 func (torrent *Torrent) processBlock(blkMsg []byte) {
 	/*	piece: <len=0009+X><id=7><index><begin><block>
 
@@ -230,41 +259,42 @@ func (torrent *Torrent) processBlock(blkMsg []byte) {
 }
 
 // Assume a request has been sent only if the peer knows you have the piece (which should be the case in every situation.)
-func (torrent *Torrent) processRequest(reqMsg []byte) []byte {
+func (peer *Peer) processRequest(reqMsg []byte) {
 	/*	request: <len=0013><id=6><index><begin><length>
 
-		The request message is fixed length, and is used to request a block. The payload contains the following information:
+			The request message is fixed length, and is used to request a block. The payload contains the following information:
 
-			index: integer specifying the zero-based piece index
-			begin: integer specifying the zero-based byte offset within the piece
-			length: integer specifying the requested length.
-	*/
-	index := int32(binary.BigEndian.Uint32(reqMsg[5:9]))
-	begin := int32(binary.BigEndian.Uint32(reqMsg[9:13]))
-	length := int32(binary.BigEndian.Uint32(reqMsg[13:17]))
+				index: integer specifying the zero-based piece index
+				begin: integer specifying the zero-based byte offset within the piece
+				length: integer specifying the requested length.
 
-	var blk []byte
-	for _, piece := range torrent.Pieces {
-		if piece.Index == int(index) {
-			for _, block := range piece.Blocks {
-				if block.Offset == int(begin) {
-					blk = block.Data[:int(length)]
-					break
+		index := int32(binary.BigEndian.Uint32(reqMsg[5:9]))
+		begin := int32(binary.BigEndian.Uint32(reqMsg[9:13]))
+		length := int32(binary.BigEndian.Uint32(reqMsg[13:17]))
+
+		var blk []byte
+		for _, piece := range torrent.Pieces {
+			if piece.Index == int(index) {
+				for _, block := range piece.Blocks {
+					if block.Offset == int(begin) {
+						blk = block.Data[:int(length)]
+						break
+					}
 				}
+
 			}
-
 		}
-	}
-	var reply []byte
+		var reply []byte
 
-	binary.BigEndian.PutUint32(reply[0:], uint32(9+len(blk)))
-	reply[4] = 7
-	copy(reply[5:9], reqMsg[5:9])
-	copy(reply[9:13], reqMsg[9:13])
-	copy(reply[13:17], reqMsg[13:17])
-	copy(reply[17:], blk)
+		binary.BigEndian.PutUint32(reply[0:], uint32(9+len(blk)))
+		reply[4] = 7
+		copy(reply[5:9], reqMsg[5:9])
+		copy(reply[9:13], reqMsg[9:13])
+		copy(reply[13:17], reqMsg[13:17])
+		copy(reply[17:], blk)
 
-	return reply
+		return reply
+	*/
 
 }
 
@@ -298,6 +328,10 @@ func (peer *Peer) processBitfield(bfieldMsg []byte) {
 	*/
 
 	peer.Bitfield = getBitsFromByteSlice(bfieldMsg[5:])
+
+}
+
+func (peer *Peer) updateBitfield(bfieldMsg []byte) {
 
 }
 

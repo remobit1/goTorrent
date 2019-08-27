@@ -12,18 +12,30 @@ import (
 	"math/rand"
 	"net"
 	"net/url"
+	"strconv"
 	"time"
 )
 
 var (
-	port     int
-	listener net.Listener
 	// MyPeerID is generated at startup to be used to identify the client to trackers and peers
-	MyPeerID []byte
+	MyPeerID    []byte
+	clientState Client
+)
+
+const (
+	port = 6700
 )
 
 func init() {
 	MyPeerID = generatePeerID()
+	portString := strconv.Itoa(port)
+	laddr := []byte(":")
+	copy(laddr, []byte(portString))
+	listeningPort, err := net.ResolveTCPAddr("tcp", string(laddr))
+	if err != nil {
+		panic(err)
+	}
+	Listen(listeningPort)
 }
 
 func generatePeerID() []byte {

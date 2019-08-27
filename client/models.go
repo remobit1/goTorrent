@@ -1,5 +1,7 @@
 package client
 
+import "net"
+
 /* TODO: GO BACK AND UNEXPORT EVERY STRUCT FIELD THAT ISN'T BEING USED OUTSIDE THIS CLIENT PACKAGE
 
 1. Read into memory a MetaInfo file and UNMarshal it (Check)
@@ -15,6 +17,11 @@ package client
 11. You have a complete torrent! (I think)
 
 */
+
+// Client will represent the state of our client, in terms of torrents that are currently being tracked.
+type Client struct {
+	torrents []Torrent
+}
 
 // Torrent contains all necessary information to start downloading a torrent
 type Torrent struct {
@@ -84,12 +91,13 @@ type TrackerResponse struct {
 
 // A Peer is a participant in the swarm
 type Peer struct {
-	PeerID     string
-	Address    string
+	address    string
+	peerID     string
+	torrent    *Torrent
 	Bitfield   []int
 	Interested int
-	reqChannel chan []byte
-	closeConn  chan int
+	Choking    int
+	conn       *net.Conn
 }
 
 // The Handshake is a required message and must be the first message transmitted by the client to a peer.
