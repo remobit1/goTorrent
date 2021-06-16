@@ -23,19 +23,24 @@ var (
 )
 
 const (
-	port = 6700
+	port = 4242
 )
 
 func init() {
 	MyPeerID = generatePeerID()
 	portString := strconv.Itoa(port)
+
 	laddr := []byte(":")
-	copy(laddr, []byte(portString))
+
+	copy(laddr[1:], []byte(portString))
+
 	listeningPort, err := net.ResolveTCPAddr("tcp", string(laddr))
 	if err != nil {
 		panic(err)
 	}
-	Listen(listeningPort)
+
+	go Listen(listeningPort)
+
 }
 
 func generatePeerID() []byte {

@@ -25,6 +25,7 @@ const (
 
 // AddTorrent returns a MetaInfo struct
 func AddTorrent(path string) *Torrent {
+
 	file, err := os.Open(path)
 	if err != nil {
 		log.Printf("Error opening file: %s", err.Error())
@@ -48,6 +49,14 @@ func AddTorrent(path string) *Torrent {
 	}
 
 	info.Announce = u.Host
+
+	for _, address := range info.AnnounceList {
+		u, err := url.Parse(address[0])
+		if err != nil {
+			fmt.Printf("Unable to parse url: %s", err.Error())
+		}
+		address[0] = u.Host
+	}
 
 	if isUDP(u) {
 		protocol = "udp"
