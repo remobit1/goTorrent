@@ -2,7 +2,8 @@ package main
 
 import (
 	"fmt"
-	"goTorrent/client"
+
+	"github.com/remobit1/goTorrent/client"
 )
 
 func main() {
