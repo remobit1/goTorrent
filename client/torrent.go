@@ -11,6 +11,7 @@ import (
 	"io/ioutil"
 	"log"
 	"math/rand"
+	"net"
 	"net/url"
 	"os"
 	"time"
@@ -24,6 +25,7 @@ const (
 
 // AddTorrent returns a MetaInfo struct
 func AddTorrent(path string) *Torrent {
+
 	file, err := os.Open(path)
 	if err != nil {
 		log.Printf("Error opening file: %s", err.Error())
@@ -47,6 +49,14 @@ func AddTorrent(path string) *Torrent {
 	}
 
 	info.Announce = u.Host
+
+	for _, address := range info.AnnounceList {
+		u, err := url.Parse(address[0])
+		if err != nil {
+			fmt.Printf("Unable to parse url: %s", err.Error())
+		}
+		address[0] = u.Host
+	}
 
 	if isUDP(u) {
 		protocol = "udp"
@@ -114,9 +124,9 @@ func (info *MetaInfo) CreateTrackerRequest(hash []byte) *TrackerRequest {
 // AddPeers takes a slice of peer addresses, creates individual peer objects from them and
 // appends them to the Peers field in the torrent struct.
 func (torrent *Torrent) AddPeers(addresses []string) {
-	for _, address := range addresses {
+	for _, addr := range addresses {
 		newPeer := Peer{
-			Address: address,
+			address: addr,
 		}
 		torrent.Peers = append(torrent.Peers, newPeer)
 	}
@@ -159,48 +169,40 @@ func (piece *Piece) prepBlocks(pieceLength int) {
 }
 
 // Start starts the torrent download
-func (torrent *Torrent) Start() {
+func (torrent *Torrent) Start(laddr *net.TCPAddr) {
+	clientState.torrents = append(clientState.torrents, *torrent)
+
 	for _, peer := range torrent.Peers {
 		fmt.Println("connecting to peer...")
-		conn, err := peer.Handshake(torrent.Hash)
+		conn, err := peer.initiateConnection(torrent.Hash)
 		if err != nil {
-			continue
+			fmt.Printf("Unable to establish connection with peer: %s \n", err.Error())
 		}
-		go peer.HandlePeer(conn, torrent)
-
-		torrent.ConnectedPeers++
-		if maxPeers == torrent.ConnectedPeers || (peer.Address == torrent.Peers[len(torrent.Peers)-1].Address) {
-			break
-		}
+		go peer.handlePeerConnection(conn)
 	}
 
 	for torrent.torrentNotComplete() {
 		torrent.Update()
 	}
 
-	torrent.Close()
+	torrent.StopDownloading()
 	fmt.Println("Torrent is done!")
 }
 
 // Update checks torrent state then sends appropriate request to peers for missing pieces
 func (torrent *Torrent) Update() {
-	var wantedPieces []Piece
 
-	for _, piece := range torrent.Pieces {
-		if piece.Complete {
-			continue
-		}
-		// create a slice of only unfinished pieces.
-		wantedPieces = append(wantedPieces, piece)
-	}
-	wantedPieces = torrent.arrangePiecesBasedOnRarity(wantedPieces)
+}
 
-	for _, piece := range wantedPieces {
-		if len(piece.AvailablePeers) > 0 {
-			piece.AvailablePeers[0].reqChannel <- createRequest(&piece)
+//StopDownloading closes all current connections with peers after a torrent is finished.
+func (torrent *Torrent) StopDownloading() {
+	for _, peer := range torrent.Peers {
+		connection := *peer.conn
+		err := connection.Close()
+		if err != nil {
+			fmt.Printf("Unable to close peer connection: %s \n", err.Error())
 		}
 	}
-	return
 }
 
 func (torrent *Torrent) arrangePiecesBasedOnRarity(pieces []Piece) []Piece {
@@ -245,13 +247,5 @@ func (torrent *Torrent) writeToFile(data []byte, offset int) {
 		fmt.Println(err.Error())
 	}
 
-	return
-}
-
-// Close cleans up any outstanding peer connections
-func (torrent *Torrent) Close() {
-	for _, peer := range torrent.Peers {
-		peer.closeConn <- 0
-	}
 	return
 }

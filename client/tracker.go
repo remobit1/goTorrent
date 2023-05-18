@@ -28,46 +28,21 @@ const (
 
 // Announce initiates the first network call to the Tracker for both the UDP and TCP protocol
 func (torrent *Torrent) Announce(request *TrackerRequest) {
-	/* var announceList []string
-	var addressesOfPeers []string
-
-	for _, urls := range torrent.Data.AnnounceList {
-		for _, url := range urls {
-			url = strings.Replace(url, "udp://", "", 1)
-			url = strings.Replace(url, "/announce", "", 1)
-			fmt.Println(url)
-			announceList = append(announceList, url)
-		}
-	}
 
 	if torrent.TrackerProtocol == "udp" {
-		for _, announceURL := range announceList {
-			for _, url := range request.announceUDP(announceURL) {
-				addressesOfPeers = append(addressesOfPeers, url)
+		if torrent.Data.AnnounceList != nil {
+			for _, url := range torrent.Data.AnnounceList {
+				addressesOfPeers := request.announceUDP(url[0])
+				torrent.AddPeers(addressesOfPeers)
 			}
-
+		} else {
+			addressesOfPeers := request.announceUDP(torrent.Data.Announce)
+			torrent.AddPeers(addressesOfPeers)
 		}
-		torrent.AddPeers(addressesOfPeers)
-		return
-	}
-
-	for _, announceURL := range announceList {
-		for _, url := range request.announceTCP(announceURL) {
-			addressesOfPeers = append(addressesOfPeers, url)
-		}
-
-	}
-	torrent.AddPeers(addressesOfPeers)
-	return */
-
-	if torrent.TrackerProtocol == "udp" {
-		addressesOfPeers := request.announceUDP(torrent.Data.Announce)
-		torrent.AddPeers(addressesOfPeers)
 		return
 	}
 	addressesOfPeers := request.announceTCP(torrent.Data.Announce)
 	torrent.AddPeers(addressesOfPeers)
-	return
 }
 
 /*  announceUDP makes a udp call to the tracker instead of tcp. It sends the connect
@@ -78,9 +53,17 @@ func (request *TrackerRequest) announceUDP(announceURL string) []string {
 	fmt.Println(announceURL)
 	raddr, err := net.ResolveUDPAddr("udp", announceURL)
 	if err != nil {
-		log.Fatalf("Failed to resolve provided udp address: %s \n", err.Error())
+		log.Printf("Failed to resolve provided udp address: %s \n", err.Error())
+		return nil
 	}
-	conn, err := net.DialUDP("udp", nil, raddr)
+
+	laddr, err := net.ResolveUDPAddr("udp", "0.0.0.0:4242")
+
+	if err != nil {
+		log.Fatalf("Failed to resolve provided local host address: %s \n", err.Error())
+	}
+
+	conn, err := net.DialUDP("udp", laddr, raddr)
 	if err != nil {
 		log.Fatalf("Failed to associate underlying socket to read to and from UDP address: %s \n", err.Error())
 	}
@@ -96,7 +79,7 @@ func (request *TrackerRequest) announceUDP(announceURL string) []string {
 	16
 	*/
 	req := make([]byte, 16)
-	binary.BigEndian.PutUint64(req[0:], 0x41727101980)
+	binary.BigEndian.PutUint64(req[0:], convertIntToUint64(0x41727101980))
 	binary.BigEndian.PutUint32(req[8:], 0)
 	binary.BigEndian.PutUint32(req[12:], binary.BigEndian.Uint32(request.TransactionID))
 
@@ -198,20 +181,21 @@ func sendUDPRequest(conn *net.UDPConn, request []byte) ([]byte, error) {
 		if err != nil {
 			fmt.Println(err.Error())
 		}
-		nRead, _, err := conn.ReadFrom(response)
 
+		nRead, trackerAddr, err := conn.ReadFrom(response)
+
+		fmt.Printf("tracker addr is %v \n", trackerAddr)
 		if err != nil {
-			fmt.Printf("Unable to read from UDP connection: %s \n", err.Error())
+			fmt.Printf("No reply: %s \n", err.Error())
 			break
 		}
 
 		if nRead > 0 {
 			return response, nil
 		}
-
 	}
 
-	err = errors.New("Unable to establish communication")
+	err = errors.New("tracker seems to be offline, trying another.")
 	return nil, err
 }
 
@@ -257,6 +241,8 @@ func (request *TrackerRequest) announceTCP(announceURL string) []string {
 	if err != nil {
 		fmt.Printf("Coudn't read response body: %s \n", err.Error())
 	}
+	fmt.Println("Length of body is: ")
+	fmt.Println(len(body))
 	var trackerResponse TrackerResponse
 	bencode.DecodeBytes(body, &trackerResponse)
 
@@ -278,10 +264,7 @@ func (request *TrackerRequest) announceTCP(announceURL string) []string {
 }
 
 func isUDP(u *url.URL) bool {
-	if u.Scheme == "udp" {
-		return true
-	}
-	return false
+	return u.Scheme == "udp"
 }
 
 func parsePeers(response []byte) []string {
