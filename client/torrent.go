@@ -11,7 +11,6 @@ import (
 	"io/ioutil"
 	"log"
 	"math/rand"
-	"net"
 	"net/url"
 	"os"
 	"time"
@@ -169,16 +168,12 @@ func (piece *Piece) prepBlocks(pieceLength int) {
 }
 
 // Start starts the torrent download
-func (torrent *Torrent) Start(laddr *net.TCPAddr) {
+func (torrent *Torrent) Start() {
 	clientState.torrents = append(clientState.torrents, *torrent)
 
 	for _, peer := range torrent.Peers {
-		fmt.Println("connecting to peer...")
-		conn, err := peer.initiateConnection(torrent.Hash)
-		if err != nil {
-			fmt.Printf("Unable to establish connection with peer: %s \n", err.Error())
-		}
-		go peer.handlePeerConnection(conn)
+		// fmt.Println("connecting to peer...")
+		go peer.initiateConnection(torrent.Hash)
 	}
 
 	for torrent.torrentNotComplete() {
@@ -194,7 +189,7 @@ func (torrent *Torrent) Update() {
 
 }
 
-//StopDownloading closes all current connections with peers after a torrent is finished.
+// StopDownloading closes all current connections with peers after a torrent is finished.
 func (torrent *Torrent) StopDownloading() {
 	for _, peer := range torrent.Peers {
 		connection := *peer.conn
@@ -246,6 +241,4 @@ func (torrent *Torrent) writeToFile(data []byte, offset int) {
 	if err != nil {
 		fmt.Println(err.Error())
 	}
-
-	return
 }

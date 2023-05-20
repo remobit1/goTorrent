@@ -45,7 +45,9 @@ func (torrent *Torrent) Announce(request *TrackerRequest) {
 	torrent.AddPeers(addressesOfPeers)
 }
 
-/*  announceUDP makes a udp call to the tracker instead of tcp. It sends the connect
+/*
+	announceUDP makes a udp call to the tracker instead of tcp. It sends the connect
+
 message, then parses the response and sends the announce to get the initial list
 of peers.
 */
@@ -195,17 +197,18 @@ func sendUDPRequest(conn *net.UDPConn, request []byte) ([]byte, error) {
 		}
 	}
 
-	err = errors.New("tracker seems to be offline, trying another.")
+	err = errors.New("tracker seems to be offline, trying another")
 	return nil, err
 }
 
-/*	WARNING: This method has yet to be tested.
-	The first six torrent files I tried were either
-	utilizing udp for communication to the tracker
-	or even if they were tcp, had 0 peers. I implemented
-	the necessary functionality in a hackish manner towards
-	the end. I'm moving on for now, but eventually I'll
-	need to come back and test this.
+/*
+WARNING: This method has yet to be tested.
+The first six torrent files I tried were either
+utilizing udp for communication to the tracker
+or even if they were tcp, had 0 peers. I implemented
+the necessary functionality in a hackish manner towards
+the end. I'm moving on for now, but eventually I'll
+need to come back and test this.
 */
 func (request *TrackerRequest) announceTCP(announceURL string) []string {
 	request.Event = started

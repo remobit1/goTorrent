@@ -7,7 +7,7 @@ import (
 )
 
 func main() {
-	name := `files\Marvel's Avengers (v1.3.3-141640, MULTi15).torrent`
+	name := `files\Oshi no Ko - 05 (720p)(3B609D89)-Erai-raws[TGx].torrent`
 	torrent := client.AddTorrent(name)
 
 	tRequest := torrent.Data.CreateTrackerRequest(torrent.Hash)
@@ -17,6 +17,6 @@ func main() {
 	for _, peer := range torrent.Peers {
 		fmt.Println(peer)
 	}
-	//torrent.Start()
+	torrent.Start()
 
 }

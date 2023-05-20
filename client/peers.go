@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"time"
 )
@@ -24,27 +25,32 @@ const (
 	keepAlive = byte(0)
 )
 
-func (peer *Peer) initiateConnection(infoHash []byte) (*net.TCPConn, error) {
+type peerLogger struct {
+	logs []string
+}
+
+func (peer *Peer) initiateConnection(infoHash []byte) {
 	raddr, err := net.ResolveTCPAddr("tcp", peer.address)
 	fmt.Println(raddr.String())
 
 	if err != nil {
 		fmt.Printf("Unable to resolve peer IP address: %s \n", err.Error())
-		return nil, err
+		return
 	}
+
 	conn, err := net.DialTCP("tcp", nil, raddr)
 	if err != nil {
 		fmt.Printf("Unable to connect with provided peer address (%s): %s \n", raddr.String(), err.Error())
-		return nil, err
+		return
 	}
 
 	fmt.Println("Peer connection open")
 
 	// conn.SetDeadline(time.Now().Add(time.Second * time.Duration(20)))
 
-	message := make([]byte, 67)
+	message := make([]byte, 68)
 
-	copy(message[0:], string(19))
+	copy(message[0:], string(rune(19)))
 	copy(message[1:20], "BitTorrent protocol")
 	binary.BigEndian.PutUint64(message[20:28], uint64(0))
 	copy(message[28:48], infoHash)
@@ -53,7 +59,7 @@ func (peer *Peer) initiateConnection(infoHash []byte) (*net.TCPConn, error) {
 	nWritten, err := conn.Write(message)
 	if err != nil {
 		fmt.Printf("Unable to write to TCP connection: %s \n", err.Error())
-		return nil, err
+		return
 	}
 
 	fmt.Printf("%v bytes written to address: %v \n", nWritten, conn.RemoteAddr())
@@ -72,14 +78,16 @@ func (peer *Peer) initiateConnection(infoHash []byte) (*net.TCPConn, error) {
 
 		_, err = io.ReadFull(buf, buff[:int(size)])
 		if err != nil {
-			return nil, err
+			fmt.Println(err.Error())
 		}
+
+		fmt.Printf("received %x\n", buff[:int(size)])
 
 		if size > 0 {
 			break
 		}
 	}
-	return conn, nil
+	peer.handlePeerConnection(conn)
 }
 
 // sendMessage takes a func that returns a built message and a connection and sends that message over the connection
@@ -111,13 +119,14 @@ func Listen(laddr *net.TCPAddr) {
 
 func (peer *Peer) handlePeerConnection(conn net.Conn) {
 	rdr := bufio.NewReader(conn)
-
+	msgSize := make([]byte, 4)
 	for {
-		msgSize := make([]byte, 4)
 		_, err := rdr.Read(msgSize)
 
 		if err != nil {
-			fmt.Printf("Unable to read msgSize: %s \n", err.Error())
+			// fmt.Printf("Unable to read msgSize: %s \n", err.Error())
+			fmt.Print("L")
+			continue
 		}
 
 		msgSizeInt := int(binary.BigEndian.Uint32(msgSize))
@@ -127,7 +136,8 @@ func (peer *Peer) handlePeerConnection(conn net.Conn) {
 		n, err := rdr.Read(msg[:msgSizeInt])
 
 		if err != nil {
-			fmt.Printf("Unable to read msg: %s \n", err.Error())
+			// fmt.Printf("Unable to read msg: %s \n", err.Error())
+			fmt.Print("O")
 			continue
 		}
 
@@ -384,4 +394,11 @@ func createRequest(piece *Piece) []byte {
 	binary.BigEndian.PutUint32(request[13:17], uint32(16384))
 
 	return request
+}
+
+func (p *peerLogger) Write(data []byte) (n int, err error) {
+	for _, plog := range p.logs {
+		log.Println(plog)
+	}
+	return len(data), nil
 }
